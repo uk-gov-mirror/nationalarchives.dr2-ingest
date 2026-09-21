@@ -9,40 +9,67 @@ on:
 permissions: {}
 
 jobs:
-  apply:
+  pause-ingest:
+    if: inputs.enabled == false
     strategy:
       matrix:
-        environment: [intg]
+        environment: [intg, staging]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
+        run: |
+          gh api --method POST /repos/nationalarchives/dr2-runbooks/actions/workflows/pause_and_resume_ingest.yml/dispatches \
+          -f 'ref=min' \
+          -f 'inputs[environment]=${{ matrix.environment }}' \
+          -f 'inputs[pause]=true'
+  apply:
+    needs: pause-ingest
+    strategy:
+      matrix:
+        environment: [intg, staging]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          ref: ${{ matrix.environment }}
+      - id: role-name
+        run: |
+          if [ "${{ matrix.environment }}" = "intg" ]; then
+            echo "role-name=IntgTerraformRole" >> $GITHUB_OUTPUT
+          else
+            echo "role-name=StagingTerraformRole" >> $GITHUB_OUTPUT
+          fi
       - uses: aws-actions/configure-aws-credentials@6782cb1b6df5d32e9354c1e6d6da4f956c0d61c4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.ACCOUNT_NUMBER }}:role/${{ matrix.environment == 'intg' && 'IntgTerraformRole' || 'StagingTerraformRole' }}
+          role-to-assume: arn:aws:iam::${{ secrets.ACCOUNT_NUMBER }}:role/${{ steps.role-name.outputs.role-name }}
           aws-region: eu-west-2
-
-      - if: inputs.enabled == false
-        run: |
-          aws lambda invoke --function-name ${{ matrix.environment }}-dr2-pause-ingest --payload '{"pause": true}' response.json
-
+      - id: version_for_environment
+        run: echo lambda_version=$(git describe --tags --exact-match HEAD --match 'v[0-9]*') >> "$GITHUB_OUTPUT"
       - uses: hashicorp/setup-terraform@b75000b53e9ce4de2b4712237bbdb711bdc92aba
-
       - working-directory: terraform
         run: |
           terraform init
-          export TF_VAR_lambda_code_version=$(curl  https://api.github.com/repos/nationalarchives/dr2-ingest/tags | jq -r '.[0].name')
           terraform workspace select ${{ matrix.environment }}
-          if [ "${{ inputs.enabled }}" = "false" ]; then
-            terraform apply -auto-approve \
-                -var="use_nat_gateway=false" \
-                -var="use_nat_instance=false" \
-                -var="interface_endpoints={}"
-            else
-                terraform apply -auto-approve
-            fi
-
-      -  if: inputs.enabled == true
-         run: |
-           aws lambda invoke --function-name ${{ matrix.environment }}-dr2-pause-ingest --payload '{"pause": false}' response.json
+          terraform apply -auto-approve
+        env:
+          TF_VAR_lambda_code_version: ${{ steps.version_for_environment.outputs.lambda_version }}
+          TF_VAR_enable_networking: ${{ inputs.enabled }}
+  resume-ingest:
+    needs: apply
+    if: inputs.enabled == true
+    strategy:
+      matrix:
+        environment: [intg, staging]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
+        run: |
+          gh api --method POST /repos/nationalarchives/dr2-runbooks/actions/workflows/pause_and_resume_ingest.yml/dispatches \
+            -f 'ref=main' \
+            -f 'inputs[environment]=${{ matrix.environment }}' \
+            -f 'inputs[pause]=false'

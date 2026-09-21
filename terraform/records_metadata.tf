@@ -1,5 +1,7 @@
 locals {
   records_metadata_bucket_name = "${local.environment}-dr2-records-metadata"
+  ayr_worker_role              = module.ayr_config.terraform_config["prod"]["dri-to-ayr-data-migration-worker-lambda-role"]
+  ayr_coordinator_role         = module.ayr_config.terraform_config["prod"]["dri-to-ayr-data-migration-coordinator-lambda-role"]
 }
 module "dr2_records_metadata_key" {
   source   = "git::https://github.com/nationalarchives/da-terraform-modules//kms"
@@ -9,7 +11,9 @@ module "dr2_records_metadata_key" {
     user_roles = [
       data.aws_iam_role.org_wiz_access_role.arn,
       data.aws_ssm_parameter.dev_admin_role.value,
-      module.dri_preingest.importer_lambda.role
+      module.dri_preingest.importer_lambda.role,
+      local.ayr_worker_role,
+      local.ayr_coordinator_role
     ]
   }
 }
@@ -20,8 +24,8 @@ module "records_metadata_bucket" {
   kms_key_arn     = module.dr2_records_metadata_key.kms_key_arn
   lifecycle_rules = local.lifecycle_rules
   bucket_policy = templatefile("${path.module}/templates/s3/records_metadata_bucket_policy.json.tpl", {
-    ayr_data_migration_worker_role      = module.ayr_config.terraform_config["prod"]["dri-to-ayr-data-migration-worker-lambda-role"]
-    ayr_data_migration_coordinator_role = module.ayr_config.terraform_config["prod"]["dri-to-ayr-data-migration-coordinator-lambda-role"]
+    ayr_data_migration_worker_role      = local.ayr_worker_role
+    ayr_data_migration_coordinator_role = local.ayr_coordinator_role
     bucket_name                         = local.records_metadata_bucket_name
   })
 }

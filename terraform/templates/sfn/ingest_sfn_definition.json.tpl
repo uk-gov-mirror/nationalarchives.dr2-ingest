@@ -201,16 +201,11 @@
             "Type": "Task",
             "Resource": "arn:aws:lambda:eu-west-2:${account_id}:function:${ingest_asset_reconciler_lambda_name}:${alias_name}",
             "Retry": ${retry_statement},
-            "Next": "Check if Reconciliation succeeded and post to Slack if it didn't"
+            "Next": "Check if Reconciliation succeeded"
           },
-          "Check if Reconciliation succeeded and post to Slack if it didn't": {
+          "Check if Reconciliation succeeded": {
             "Type": "Choice",
             "Choices": [
-              {
-                "Variable": "$.wasReconciled",
-                "BooleanEquals": false,
-                "Next": "Post failure message to Slack"
-              },
               {
                 "Variable": "$.wasReconciled",
                 "BooleanEquals": true,
@@ -253,24 +248,6 @@
             },
             "Retry": ${retry_statement},
             "ResultPath": null,
-            "End": true
-          },
-          "Post failure message to Slack": {
-            "Type": "Task",
-            "Resource": "arn:aws:states:::events:putEvents",
-            "Retry": ${retry_statement},
-            "Parameters": {
-              "Entries": [
-                {
-                  "Detail": {
-                    "slackMessage.$": "States.Format(':alert-noflash-slow: Reconciliation failed for asset {}. See the state output for the result key.', $.assetId)"
-                  },
-                  "DetailType": "DR2Message",
-                  "EventBusName": "default",
-                  "Source": "reconcilerLambda"
-                }
-              ]
-            },
             "End": true
           },
           "Throw Reconciler job error": {

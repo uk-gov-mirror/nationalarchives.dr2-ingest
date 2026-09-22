@@ -2,7 +2,8 @@ locals {
   postingest_state_table_name                = "${var.environment}-dr2-postingest-state"
   postingest_gsi_firstqueued_name            = "QueueFirstQueuedIdx"
   postingest_gsi_lastqueued_name             = "QueueLastQueuedIdx"
-  send_to_state_change_ddb_queue_lambda_name = "${var.environment}-dr2-postingest-state-change-queue-sender"
+  send_to_state_change_ddb_queue_key         = "postingest-state-change-queue-sender"
+  send_to_state_change_ddb_queue_lambda_name = "${var.environment}-dr2-${local.send_to_state_change_ddb_queue_key}"
   state_change_ddb_queue_name                = "${var.environment}-dr2-postingest-state-change-handler"
   state_change_lambda_key                    = "postingest-state-change-handler"
   state_change_lambda_name                   = "${var.environment}-dr2-${local.state_change_lambda_key}"
@@ -120,7 +121,8 @@ module "dr2_send_to_state_change_ddb_queue_lambda" {
     stream_arn             = module.postingest_state_table.stream_arn
     dead_letter_target_arn = module.dr2_state_change_ddb_queue.dlq_sqs_arn
   }
-
+  s3_bucket = local.code_deploy_bucket
+  s3_key    = "${var.lambda_code_version}/${local.send_to_state_change_ddb_queue_key}"
   policies = {
     "${local.send_to_state_change_ddb_queue_lambda_name}-policy" = templatefile("./templates/iam_policy/send_to_state_change_ddb_queue.json.tpl", {
       state_change_handler_queue_arn  = module.dr2_state_change_ddb_queue.sqs_arn

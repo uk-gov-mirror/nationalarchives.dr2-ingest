@@ -7,6 +7,7 @@ import re
 import sqlite3
 import sys
 import uuid
+import math
 from collections import defaultdict
 from contextlib import closing
 from os import listdir
@@ -87,7 +88,6 @@ def migrate(ic_db_path):
     assets = []
     raw_cache_bucket = f"{environment}-dr2-ingest-dri-migration-cache"
     object_store_bucket = os.environ["OBJECT_STORE_BUCKET"]
-    object_store_account_number = os.environ["OBJECT_STORE_ACCOUNT_NUMBER"]
     queue_url = f"https://sqs.eu-west-2.amazonaws.com/{account_number}/{environment}-dr2-preingest-dri-importer"
     puid_lookup = create_skeleton_suite_lookup(['fmt', 'x-fmt'], os.environ["DROID_PATH"]) if test_run else {}
     oracledb.defaults.fetch_lobs = False
@@ -183,25 +183,57 @@ def migrate(ic_db_path):
 
             with open(upload_file_path, "rb") as upload_file:
                 prefix = f"v1/{asset_id}"
-                tags = parse.urlencode([("Series", asset_metadata["Series"])],)
-                try:
-                    s3_client.put_object(
-                        Body=upload_file,
-                        Key=f"{prefix}/{asset_file_id}",
+                tags = parse.urlencode([("Series", asset_metadata["Series"])], )
+                chunk_size = 5 * 1024 * 1024
+                file_size = os.path.getsize(upload_file_path)
+                total_parts = math.ceil(file_size / chunk_size)
+
+                init_response = s3_client.create_multipart_upload(
+                    Bucket=object_store_bucket,
+                    Key=f"{prefix}/{asset_file_id}",
+                    Tagging=tags
+                )
+                upload_id = init_response["UploadId"]
+                parts = []
+
+                for part_number in range(1, total_parts + 1):
+                    file_chunk = upload_file.read(chunk_size)
+
+                    part_response = s3_client.upload_part(
                         Bucket=object_store_bucket,
-                        Tagging=tags,
-                        IfNoneMatch="*",
-                        ExpectedBucketOwner=object_store_account_number
+                        Key=f"{prefix}/{asset_file_id}",
+                        UploadId=upload_id,
+                        PartNumber=part_number,
+                        Body=file_chunk
+                    )
+
+                    parts.append({
+                        "ETag": part_response["ETag"],
+                        "PartNumber": part_number
+                    })
+                try:
+                    s3_client.complete_multipart_upload(
+                        Bucket=object_store_bucket,
+                        Key=f"{prefix}/{asset_file_id}",
+                        UploadId=upload_id,
+                        MultipartUpload={'Parts': parts},
+                        IfNoneMatch="*"
+
                     )
                 except ClientError as e:
                     error = e.response["Error"]
                     if error["Code"] == "PreconditionFailed" and error.get("Condition") == "If-None-Match":
                         print(f"Skipping asset {asset_id} as it already exists in {object_store_bucket}")
                     else:
-                        raise e
+                        print(f"An error occurred: {e}")
+                    s3_client.abort_multipart_upload(
+                        Bucket=object_store_bucket,
+                        Key=f"{prefix}/{asset_file_id}",
+                        UploadId=upload_id
+                    )
+
             local_assets.append((asset_file_id, str(base_file_path), asset_id))
         json_bytes = io.BytesIO(json.dumps(all_metadata).encode("utf-8"))
-
         s3_client.upload_fileobj(json_bytes, raw_cache_bucket, f"{asset_id}.metadata")
         asset_sqs_message = {
             'assetId': asset_id,

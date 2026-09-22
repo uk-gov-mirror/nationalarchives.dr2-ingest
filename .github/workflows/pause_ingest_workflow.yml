@@ -2,7 +2,7 @@ name: Disable NAT gateways overnight
 on:
   workflow_dispatch:
     inputs:
-      enabled:
+      disabled:
         required: true
         type: boolean
 
@@ -10,7 +10,6 @@ permissions: {}
 
 jobs:
   pause-ingest:
-    if: inputs.enabled == false
     strategy:
       matrix:
         environment: [intg, staging]
@@ -22,7 +21,7 @@ jobs:
           gh api --method POST /repos/nationalarchives/dr2-runbooks/actions/workflows/pause_and_resume_ingest.yml/dispatches \
           -f 'ref=min' \
           -f 'inputs[environment]=${{ matrix.environment }}' \
-          -f 'inputs[pause]=true'
+          -f 'inputs[pause]=${{ inputs.disabled }}'
   apply:
     needs: pause-ingest
     strategy:
@@ -58,18 +57,3 @@ jobs:
         env:
           TF_VAR_lambda_code_version: ${{ steps.version_for_environment.outputs.lambda_version }}
           TF_VAR_enable_networking: ${{ inputs.enabled }}
-  resume-ingest:
-    needs: apply
-    if: inputs.enabled == true
-    strategy:
-      matrix:
-        environment: [intg, staging]
-    runs-on: ubuntu-latest
-    steps:
-      - env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
-        run: |
-          gh api --method POST /repos/nationalarchives/dr2-runbooks/actions/workflows/pause_and_resume_ingest.yml/dispatches \
-            -f 'ref=main' \
-            -f 'inputs[environment]=${{ matrix.environment }}' \
-            -f 'inputs[pause]=false'

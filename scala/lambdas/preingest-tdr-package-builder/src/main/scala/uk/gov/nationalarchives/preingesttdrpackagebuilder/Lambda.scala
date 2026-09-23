@@ -55,44 +55,47 @@ class Lambda extends LambdaRunner[Input, Output, Config, Dependencies]:
       val jsonString = new String(metadataArr, "utf-8")
       decodePackageMetadata(jsonString)
         .flatMap { packageMetadataList =>
-          def createMetadataObjects(firstPackageMetadata: PackageMetadata, fileName: String, originalFilePath: String) = for {
-            assetMetadata <- createAsset(firstPackageMetadata, fileName, originalFilePath, metadataId, potentialMessageId)
-            s3FilesMap <- listS3Objects(fileLocation.getHost, potentialFilesPrefix.getOrElse(assetMetadata.id.toString))
-            contentFolderKey <- config.sourceSystem match {
-              case SourceSystem.ADHOC => IO.pure(s"${firstPackageMetadata.series}$defaultFolderName")
-              case _                  =>
-                IO.fromOption[String](firstPackageMetadata.consignmentReference.orElse(firstPackageMetadata.driBatchReference))(
-                  new Exception(s"We need either a consignment reference or DRI batch reference for ${assetMetadata.id}")
-                ).map(reference => s"${firstPackageMetadata.series}$reference")
-            }
-            metadataObjects <- contentFolderCell.modify[List[MetadataObject]] { contentFolderMap =>
-              val fileMetadataObjs: List[FileMetadataObject] = packageMetadataList.sortBy(p => natural(p.filename)).zipWithIndex.map { (packageMetadata, idx) =>
-                val s3File = s3FilesMap(packageMetadata.fileId)
-                FileMetadataObject(
-                  packageMetadata.fileId,
-                  Option(assetMetadata.id),
-                  packageMetadata.filename,
-                  packageMetadata.sortOrder.getOrElse(idx + 1),
-                  packageMetadata.filename,
-                  s3File.size(),
-                  Preservation,
-                  1,
-                  URI.create(s"s3://${fileLocation.getHost}/${s3File.key()}"),
-                  packageMetadata.checksums
-                )
+          def createMetadataObjects(firstPackageMetadata: PackageMetadata, fileName: String, originalFilePath: String) = {
+            val series = getSeries(firstPackageMetadata)
+            for {
+              assetMetadata <- createAsset(firstPackageMetadata, fileName, originalFilePath, metadataId, potentialMessageId)
+              s3FilesMap <- listS3Objects(fileLocation.getHost, potentialFilesPrefix.getOrElse(assetMetadata.id.toString))
+              contentFolderKey <- config.sourceSystem match {
+                case SourceSystem.ADHOC => IO.pure(s"$series$defaultFolderName")
+                case _                  =>
+                  IO.fromOption[String](firstPackageMetadata.consignmentReference.orElse(firstPackageMetadata.driBatchReference))(
+                    new Exception(s"We need either a consignment reference or DRI batch reference for ${assetMetadata.id}")
+                  ).map(reference => s"$series$reference")
               }
+              metadataObjects <- contentFolderCell.modify[List[MetadataObject]] { contentFolderMap =>
+                val fileMetadataObjs: List[FileMetadataObject] = packageMetadataList.sortBy(p => natural(p.filename)).zipWithIndex.map { (packageMetadata, idx) =>
+                  val s3File = s3FilesMap(packageMetadata.fileId)
+                  FileMetadataObject(
+                    packageMetadata.fileId,
+                    Option(assetMetadata.id),
+                    packageMetadata.filename,
+                    packageMetadata.sortOrder.getOrElse(idx + 1),
+                    packageMetadata.filename,
+                    s3File.size(),
+                    Preservation,
+                    1,
+                    URI.create(s"s3://${fileLocation.getHost}/${s3File.key()}"),
+                    packageMetadata.checksums
+                  )
+                }
 
-              val contentFolderName = contentFolderKey.substring(firstPackageMetadata.series.length)
-              val potentialContentFolder = contentFolderMap.get(contentFolderKey)
-              if potentialContentFolder.isDefined then (contentFolderMap, assetMetadata.copy(parentId = potentialContentFolder.map(_.id)) :: fileMetadataObjs)
-              else
-                val contentFolderId = dependencies.uuidGenerator()
-                val contentFolderMetadata = ContentFolderMetadataObject(contentFolderId, None, None, contentFolderName, Option(firstPackageMetadata.series), Nil)
-                val updatedMap = contentFolderMap + (contentFolderKey -> contentFolderMetadata)
-                val allMetadata = List(contentFolderMetadata, assetMetadata.copy(parentId = Option(contentFolderMetadata.id))) ++ fileMetadataObjs
-                (updatedMap, allMetadata)
-            }
-          } yield metadataObjects
+                val contentFolderName = contentFolderKey.substring(series.length)
+                val potentialContentFolder = contentFolderMap.get(contentFolderKey)
+                if potentialContentFolder.isDefined then (contentFolderMap, assetMetadata.copy(parentId = potentialContentFolder.map(_.id)) :: fileMetadataObjs)
+                else
+                  val contentFolderId = dependencies.uuidGenerator()
+                  val contentFolderMetadata = ContentFolderMetadataObject(contentFolderId, None, None, contentFolderName, Option(series), Nil)
+                  val updatedMap = contentFolderMap + (contentFolderKey -> contentFolderMetadata)
+                  val allMetadata = List(contentFolderMetadata, assetMetadata.copy(parentId = Option(contentFolderMetadata.id))) ++ fileMetadataObjs
+                  (updatedMap, allMetadata)
+              }
+            } yield metadataObjects
+          }
 
           packageMetadataList match {
             case head :: Nil  => createMetadataObjects(head, head.filename, head.originalFilePath)
@@ -205,14 +208,15 @@ class Lambda extends LambdaRunner[Input, Output, Config, Dependencies]:
         potentialMessageId: Option[String]
     ): IO[AssetMetadataObject] = IO.pure {
       val assetId = packageMetadata.assetId.getOrElse(packageMetadata.UUID.get)
+      val series = getSeries(packageMetadata)
       val sourceSpecificIdentifiers = config.sourceSystem match {
         case SourceSystem.TDR => List(IdField("BornDigitalRef", packageMetadata.fileReference), IdField(upstreamSystemRefIdKey, packageMetadata.fileReference))
         case SourceSystem.DRI =>
-          List(IdField(upstreamSystemRefIdKey, s"${packageMetadata.series}/${packageMetadata.fileReference}")) ++
+          List(IdField(upstreamSystemRefIdKey, s"$series/${packageMetadata.fileReference}")) ++
             packageMetadata.driBatchReference.map(driBatchRef => IdField("DRIBatchReference", driBatchRef)).toList ++
             packageMetadata.IAID.map(iaid => IdField(discoveryIaidKey, iaid)).toList
         case SourceSystem.ADHOC =>
-          List(IdField(upstreamSystemRefIdKey, s"${packageMetadata.series}/${packageMetadata.fileReference}")) ++
+          List(IdField(upstreamSystemRefIdKey, s"$series/${packageMetadata.fileReference}")) ++
             packageMetadata.formerRefDept.map(frd => List(IdField(formerRefDeptIdKey, frd))).getOrElse(Nil) ++
             packageMetadata.formerRefTNA.map(frt => List(IdField(formerRefTnaIdKey, frt))).getOrElse(Nil) ++
             packageMetadata.IAID.map(iaid => IdField(discoveryIaidKey, iaid)).toList
@@ -236,7 +240,7 @@ class Lambda extends LambdaRunner[Input, Output, Config, Dependencies]:
         List(
           IdField(
             "Code",
-            s"${packageMetadata.series}/${packageMetadata.fileReference}"
+            s"${packageMetadata.citableRefPrefix.getOrElse(packageMetadata.series)}/${packageMetadata.fileReference}"
           ),
           IdField("RecordID", assetId.toString)
         ) ++ sourceSpecificIdentifiers ++ packageMetadata.consignmentReference.map(consignmentRef => List(IdField("ConsignmentReference", consignmentRef))).getOrElse(Nil)
@@ -256,6 +260,12 @@ class Lambda extends LambdaRunner[Input, Output, Config, Dependencies]:
       else truncateArray(arr.dropRight(1))
     if s.length < 100 then s else s"${truncateArray(s.split(" ")).mkString(" ")}..."
   }
+
+  private def getSeries(packageMetadata: PackageMetadata) =
+    packageMetadata.citableRefPrefix match {
+      case Some(citableRefPrefix) => citableRefPrefix.split("/").slice(0, 2).mkString("/")
+      case None                   => packageMetadata.series
+    }
 
   private def descriptionToFileName(description: Option[String]) =
     description match
@@ -294,6 +304,7 @@ object Lambda:
       formerRefDept <- c.downField("formerRefDept").as[Option[String]]
       formerRefTNA <- c.downField("formerRefTNA").as[Option[String]]
       iaid <- c.downField("IAID").as[Option[String]]
+      citableRefPrefix <- c.downField("CitableRefPrefix").as[Option[String]]
     yield PackageMetadata(
       series,
       uuid,
@@ -312,7 +323,8 @@ object Lambda:
       digitalAssetSource,
       formerRefDept,
       formerRefTNA,
-      iaid
+      iaid,
+      citableRefPrefix
     )
 
   case class PackageMetadata(
@@ -333,7 +345,8 @@ object Lambda:
       digitalAssetSource: Option[String],
       formerRefDept: Option[String],
       formerRefTNA: Option[String],
-      IAID: Option[String]
+      IAID: Option[String],
+      citableRefPrefix: Option[String]
   )
 
   type LockTableMessage = NotificationMessage

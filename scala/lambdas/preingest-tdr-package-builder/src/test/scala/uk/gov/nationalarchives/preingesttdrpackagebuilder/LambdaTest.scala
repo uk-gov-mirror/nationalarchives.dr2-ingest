@@ -53,7 +53,8 @@ class LambdaTest extends AnyFlatSpec with ScalaCheckDrivenPropertyChecks:
       formerRefTNA: Option[String],
       iaid: Option[String],
       upstreamSystem: SourceSystem,
-      filesPrefix: Option[String]
+      filesPrefix: Option[String],
+      citableRefPrefix: Option[String]
   )
   val dateGen: Gen[String] = for {
     year <- Gen.posNum[Int]
@@ -100,6 +101,12 @@ class LambdaTest extends AnyFlatSpec with ScalaCheckDrivenPropertyChecks:
       dri <- Gen.option(Gen.asciiStr)
     yield if tdr.isEmpty && dri.isEmpty then (Option("TDR-123"), None) else (tdr, dri)
 
+  val citableRefGen: Gen[String] =
+    for
+      slashCount <- Gen.choose(1, 6)
+      parts <- Gen.listOfN(slashCount + 1, Gen.nonEmptyStringOf(Gen.alphaChar))
+    yield parts.mkString("/")
+
   val testDataGen: Gen[TestData] = for {
     series <- Gen.asciiStr
     assetId <- Gen.option(Gen.uuid)
@@ -122,6 +129,7 @@ class LambdaTest extends AnyFlatSpec with ScalaCheckDrivenPropertyChecks:
     iaid <- Gen.option(Gen.nonEmptyStringOf(Gen.asciiChar))
     upstreamSystem <- Gen.oneOf(SourceSystem.values.toList)
     filesPrefix <- Gen.option(Gen.nonEmptyStringOf(Gen.alphaChar))
+    citableRefPrefix <- Gen.option(citableRefGen)
   } yield TestData(
     fileId,
     assetId,
@@ -144,7 +152,8 @@ class LambdaTest extends AnyFlatSpec with ScalaCheckDrivenPropertyChecks:
     formerRefTNA,
     iaid,
     upstreamSystem,
-    filesPrefix
+    filesPrefix,
+    citableRefPrefix
   )
 
   val testListDataGen: Gen[List[TestData]] = Gen.nonEmptyListOf(testDataGen)
@@ -183,7 +192,8 @@ class LambdaTest extends AnyFlatSpec with ScalaCheckDrivenPropertyChecks:
       testData.digitalAssetSource,
       testData.formerRefDept,
       testData.formerRefTNA,
-      testData.iaid
+      testData.iaid,
+      testData.citableRefPrefix
     )
 
     val testData = allTestData.head
@@ -233,10 +243,15 @@ class LambdaTest extends AnyFlatSpec with ScalaCheckDrivenPropertyChecks:
           case None              => "Untitled"
       else testData.fileName.fileString
 
+    val expectedSeries = testData.citableRefPrefix match {
+      case Some(crp) => crp.split("/").slice(0, 2).mkString("/")
+      case None      => testData.series
+    }
+
     contentFolderMetadataObject.name should equal(expectedContentFolderName)
     contentFolderMetadataObject.title should equal(None)
     contentFolderMetadataObject.parentId should equal(None)
-    contentFolderMetadataObject.series should equal(Option(testData.series))
+    contentFolderMetadataObject.series should equal(Option(expectedSeries))
 
     assetMetadataObject.id should equal(expectedId)
     assetMetadataObject.parentId should equal(Option(uuidList(1)))
@@ -264,9 +279,9 @@ class LambdaTest extends AnyFlatSpec with ScalaCheckDrivenPropertyChecks:
     def checkIdField(name: String, value: String): Unit =
       assetMetadataObject.idFields.find(_.name == name).map(_.value).get should equal(value)
 
-    checkIdField("Code", s"${testData.series}/${testData.fileRef}")
+    checkIdField("Code", s"${testData.citableRefPrefix.getOrElse(testData.series)}/${testData.fileRef}")
     if List(SourceSystem.DRI, SourceSystem.ADHOC).contains(testData.upstreamSystem)
-    then checkIdField("UpstreamSystemReference", s"${testData.series}/${testData.fileRef}")
+    then checkIdField("UpstreamSystemReference", s"$expectedSeries/${testData.fileRef}")
     else if testData.upstreamSystem == SourceSystem.TDR then checkIdField("UpstreamSystemReference", testData.fileRef)
 
     if testData.upstreamSystem == SourceSystem.TDR then checkIdField("BornDigitalRef", testData.fileRef)
@@ -335,6 +350,7 @@ class LambdaTest extends AnyFlatSpec with ScalaCheckDrivenPropertyChecks:
       None,
       None,
       None,
+      None,
       None
     ) :: Nil
 
@@ -388,6 +404,7 @@ class LambdaTest extends AnyFlatSpec with ScalaCheckDrivenPropertyChecks:
       checksum("checksum"),
       "reference",
       "/path/to/file.txt",
+      None,
       None,
       None,
       None,
@@ -473,6 +490,7 @@ class LambdaTest extends AnyFlatSpec with ScalaCheckDrivenPropertyChecks:
           None,
           None,
           None,
+          None,
           None
         )
       )
@@ -504,6 +522,7 @@ class LambdaTest extends AnyFlatSpec with ScalaCheckDrivenPropertyChecks:
           checksum(""),
           "",
           "",
+          None,
           None,
           None,
           None,
@@ -546,6 +565,7 @@ class LambdaTest extends AnyFlatSpec with ScalaCheckDrivenPropertyChecks:
         None,
         Some("TS245.ABCD.25-1"),
         Some("AB 8/4/6"),
+        None,
         None
       )
     )
@@ -587,6 +607,7 @@ class LambdaTest extends AnyFlatSpec with ScalaCheckDrivenPropertyChecks:
           None,
           None,
           Some("AB 8/4/6"),
+          None,
           None
         )
       )

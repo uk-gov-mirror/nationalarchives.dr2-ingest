@@ -29,15 +29,15 @@ jobs:
           mkdir -p target/outputs
           sbt ingestLambdasRoot/assembly
           (cd ./python/lambdas/preingest-importer/ && bash deploy.sh)
-          zip -jA preingest-tdr-importer python/lambdas/preingest-importer/lambda_function.py
-          cp preingest-tdr-importer target/outputs
-          cp preingest-tdr-importer target/outputs/preingest-dri-importer
-          cp preingest-tdr-importer target/outputs/preingest-adhoc-importer
-          cp preingest-tdr-importer target/outputs/preingest-restore-importer
+          zip -jA preingest-importer python/lambdas/preingest-importer/lambda_function.py
+          cp preingest-importer target/outputs/preingest-tdr-importer
+          cp preingest-importer target/outputs/preingest-dri-importer
+          cp preingest-importer target/outputs/preingest-adhoc-importer
+          cp preingest-importer target/outputs/preingest-restore-importer
           zip -jA ingest-metric-collector python/lambdas/ingest-metric-collector/ingest_metric_collector.py
           zip -jA pause-ingest python/lambdas/pause-ingest/pause_ingest.py
           zip -jA pause-preservica-activity python/lambdas/pause-preservica-activity/pause_preservica_activity.py
-          zip -jA postingest-state-change-queue-sender python/lambdas/send-to-state-change-ddb-queue/send_to_state_change_ddb_queue.py
+          zip -jA postingest-state-change-queue-sender python/lambdas/postingest-state-change-queue-sender/state_change_queue_sender.py
           zip -jA ip-lock-checker python/lambdas/ip-lock-checker/ip_lock_checker.py
           cp ingest-metric-collector target/outputs
           cp pause-ingest target/outputs

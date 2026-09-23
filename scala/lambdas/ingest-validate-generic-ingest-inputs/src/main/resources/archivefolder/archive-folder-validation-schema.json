@@ -6,7 +6,7 @@
     "series": {
       "type": "string",
       "$comment": "(Optional) If the Archive Folder is the top-level entry in the JSON, then it will have a Series",
-      "pattern": "^([A-Z]{1,4} [1-9][0-9]{0,3}|Unknown|MOCK1 123)$",
+      "pattern": "^([A-Z]{1,4}[ \/][1-9][0-9]{0,3}|Unknown|MOCK1 123)$",
       "minLength": 1
     },
     "id_Code": {

@@ -54,7 +54,8 @@ object JsonUtils {
         val SHA256ServerSideChecksum: String,
         val FileReference: String,
         val ClientSideOriginalFilepath: String,
-        @Contextual val fileId: UUID
+        @Contextual val fileId: UUID,
+        val CitableRefPrefix: String?
     )
 
     val jsonCodec = Json {

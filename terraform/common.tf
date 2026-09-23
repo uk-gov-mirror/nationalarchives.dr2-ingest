@@ -206,14 +206,14 @@ data "aws_ssm_parameter" "slack_webhook_url" {
 data "aws_region" "current" {}
 
 module "vpc" {
-  source                    = "git::https://github.com/nationalarchives/da-terraform-modules//vpc"
-  vpc_name                  = "${local.environment}-vpc"
-  az_count                  = local.az_count
-  elastic_ip_allocation_ids = data.aws_eip.eip.*.id
-  use_nat_gateway           = var.disable_networking == false
-  create_s3_gateway_endpoint = var.disable_networking == false
+  source                         = "git::https://github.com/nationalarchives/da-terraform-modules//vpc"
+  vpc_name                       = "${local.environment}-vpc"
+  az_count                       = local.az_count
+  elastic_ip_allocation_ids      = data.aws_eip.eip.*.id
+  use_nat_gateway                = var.disable_networking == false
+  create_s3_gateway_endpoint     = var.disable_networking == false
   create_dynamo_gateway_endpoint = var.disable_networking == false
-  environment               = local.environment
+  environment                    = local.environment
   private_nacl_rules = concat([
     { rule_no = 100, cidr_block = "0.0.0.0/0", action = "allow", from_port = 443, to_port = 443, egress = true },
     { rule_no = 100, cidr_block = "0.0.0.0/0", action = "allow", from_port = 1024, to_port = 65535, egress = false },

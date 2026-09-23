@@ -35,6 +35,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           ref: ${{ matrix.environment }}
+          persist-credentials: false
       - id: role-name
         run: |
           if [ "${{ matrix.environment }}" = "intg" ]; then
@@ -56,4 +57,4 @@ jobs:
           terraform apply -auto-approve
         env:
           TF_VAR_lambda_code_version: ${{ steps.version_for_environment.outputs.lambda_version }}
-          TF_VAR_enable_networking: ${{ inputs.enabled }}
+          TF_VAR_disabled_networking: ${{ inputs.disabled }}

@@ -321,6 +321,7 @@ class IngestUtils(
 
         fun generateSeries() = listOf(null, "TEST123", "").shuffled().first()
         val series = if (invalidMetadata) generateSeries() else "TEST 123"
+        val citableRefPrefix = if (Math.random() > 0.5) null else series?.replace(" ", "/")
         val bucketName = sourceSystem.getBucket(config)
 
         suspend fun uploadNonJudgmentPackage(metadata: String) {
@@ -340,7 +341,8 @@ class IngestUtils(
                 checksum,
                 "Z${makeReference(5)}",
                 "/",
-                fileId
+                fileId,
+                citableRefPrefix
             ))))
             SourceSystem.ADHOC -> uploadNonJudgmentPackage(jsonCodec.encodeToString(listOf(AdhocMetadata(
                 series,

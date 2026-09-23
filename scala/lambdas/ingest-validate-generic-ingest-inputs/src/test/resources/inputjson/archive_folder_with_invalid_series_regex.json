@@ -10,6 +10,6 @@
     }
   ],
   "expectedErrors": [
-    "f991ee71-de22-4bb9-ada8-720362486d49 does not match the regex pattern ^([A-Z]{1,4} [1-9][0-9]{0,3}|Unknown|MOCK1 123)$"
+    "f991ee71-de22-4bb9-ada8-720362486d49 does not match the regex pattern ^([A-Z]{1,4}[ \/][1-9][0-9]{0,3}|Unknown|MOCK1 123)$"
   ]
 }

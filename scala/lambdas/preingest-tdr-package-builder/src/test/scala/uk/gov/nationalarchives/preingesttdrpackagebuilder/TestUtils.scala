@@ -47,7 +47,8 @@ object TestUtils:
       m.digitalAssetSource.map(s => ("digitalAssetSource", Json.fromString(s))),
       m.formerRefDept.map(frd => ("formerRefDept", Json.fromString(frd))),
       m.formerRefTNA.map(frt => ("formerRefTNA", Json.fromString(frt))),
-      m.IAID.map(iaid => ("IAID", Json.fromString(iaid)))
+      m.IAID.map(iaid => ("IAID", Json.fromString(iaid))),
+      m.citableRefPrefix.map(crp => ("CitableRefPrefix", Json.fromString(crp)))
     ).flatten ++ checksums
     Json.obj(metadataObjectFields*)
   }

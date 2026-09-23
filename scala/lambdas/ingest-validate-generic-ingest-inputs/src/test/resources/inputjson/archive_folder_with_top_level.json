@@ -6,7 +6,7 @@
       "name": "TestName",
       "parentId": null,
       "title": "Test title",
-      "series": "TEST 1"
+      "series": "TEST/1"
     }
   ],
   "expectedErrors": [

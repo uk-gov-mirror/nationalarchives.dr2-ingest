@@ -48,38 +48,55 @@ object DiscoveryService {
           }(is => Async[F].blocking(is.close()))
           outputStream <- Resource.make(Async[F].pure(new ByteArrayOutputStream()))(bos => Async[F].blocking(bos.close()))
         } yield (xsltStream, inputStream, outputStream)
-        resources.use { case (xsltStream, inputStream, outputStream) =>
-          val factory = TransformerFactory.newInstance()
-          val xslt = new StreamSource(xsltStream)
-          val input = new StreamSource(inputStream)
-          val result = new StreamResult(outputStream)
-          val transformer = factory.newTransformer(xslt)
-          transformer.transform(input, result)
-          Async[F].pure(outputStream.toByteArray.map(_.toChar).mkString.trim)
-        }
+        resources
+          .use { case (xsltStream, inputStream, outputStream) =>
+            val factory = TransformerFactory.newInstance()
+            val xslt = new StreamSource(xsltStream)
+            val input = new StreamSource(inputStream)
+            val result = new StreamResult(outputStream)
+            val transformer = factory.newTransformer(xslt)
+            transformer.transform(input, result)
+            Async[F].pure(outputStream.toByteArray.map(_.toChar).mkString.trim)
+          }
+          .handleError(_ => description)
       }
 
       private def stripHtmlFromDiscoveryResponse(discoveryAsset: DiscoveryCollectionAsset) = {
-        discoveryAsset.scopeContent.description.traverse(transformWithXslt).map { potentialDescription =>
-          val potentialTitleWithoutBackslashes = discoveryAsset.title.map { discoveryAssetTitle =>
-            val titleWithoutHtmlCodes = replaceHtmlCodesWithUnicodeChars(discoveryAssetTitle)
-            XML.loadString(titleWithoutHtmlCodes.replaceAll("\\\\", "")).text
-          }
+        discoveryAsset.scopeContent.description.traverse(transformWithXslt).flatMap { potentialDescription =>
           val newScopeContent = DiscoveryScopeContent(potentialDescription)
-          discoveryAsset.copy(title = potentialTitleWithoutBackslashes, scopeContent = newScopeContent)
+          Async[F]
+            .blocking {
+              discoveryAsset.title.map { discoveryAssetTitle =>
+                val titleWithoutHtmlCodes = replaceHtmlCodesWithUnicodeChars(discoveryAssetTitle)
+                XML.loadString(titleWithoutHtmlCodes.replaceAll("\\\\", "")).text
+              }
+            }
+            .map { potentialTitleWithoutBackslashes =>
+              discoveryAsset.copy(title = potentialTitleWithoutBackslashes, scopeContent = newScopeContent)
+            }
+            .handleError { _ =>
+              discoveryAsset.copy(scopeContent = newScopeContent)
+            }
         }
       }
 
       private def defaultCollectionAsset(citableReference: String): F[DiscoveryCollectionAsset] =
         Async[F].pure(DiscoveryCollectionAsset(citableReference, DiscoveryScopeContent(None), None))
 
-      def getAssetFromDiscoveryApi(citableReference: String): F[DiscoveryCollectionAsset] = {
-        val uri = uri"$discoveryBaseUrl/API/records/v1/collection/$citableReference?source=TNA"
+      def fetchAssets(citableReference: String, sources: List[String]): F[List[DiscoveryCollectionAsset]] = {
+        val uri = uri"$discoveryBaseUrl/API/records/v1/collection/$citableReference?source=${sources.head}"
         val request = basicRequest.get(uri).response(asJson[DiscoveryCollectionAssetResponse])
-        for {
+        for
           response <- backend.send(request)
           body <- Async[F].fromEither(response.body)
-          potentialAsset = body.assets.find(_.citableReference == citableReference)
+          assets <- if body.assets.isEmpty && sources.nonEmpty then fetchAssets(citableReference, sources.tail) else Async[F].pure(body.assets)
+        yield assets
+      }
+
+      def getAssetFromDiscoveryApi(citableReference: String): F[DiscoveryCollectionAsset] = {
+        for {
+          assets <- fetchAssets(citableReference, List("TNA", "PA"))
+          potentialAsset = assets.find(_.citableReference == citableReference)
           formattedAsset <- potentialAsset.map(stripHtmlFromDiscoveryResponse).getOrElse(defaultCollectionAsset(citableReference))
         } yield formattedAsset
       }.handleErrorWith { e =>

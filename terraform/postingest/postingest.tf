@@ -113,7 +113,7 @@ module "dr2_send_to_state_change_ddb_queue_lambda" {
   source          = "git::https://github.com/nationalarchives/da-terraform-modules//lambda"
   description     = "A lambda function to pass on a DynamoDB Stream event to an SQS queue"
   function_name   = local.send_to_state_change_ddb_queue_lambda_name
-  handler         = "send_to_state_change_ddb_queue.lambda_handler"
+  handler         = "state_change_queue_sender.lambda_handler"
   timeout_seconds = local.python_timeout_seconds
   runtime         = local.python_runtime
   memory_size     = local.python_lambda_memory_size

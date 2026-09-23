@@ -1,4 +1,4 @@
-# DR2 Send to Post-Ingest State Change DDB Queue
+# DR2 State Change DDB Queue Sender
 
 Since we are using a batch size of 100 in the Event Source Mapping, when a single item failed to process, the whole batch is failed.
 The Post-Ingest state Lambda then continued to fail until the unprocessable message fell out of the DynamoDB Stream window (about 6 hours).
